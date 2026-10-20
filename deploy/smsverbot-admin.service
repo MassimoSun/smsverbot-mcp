@@ -1,0 +1,24 @@
+[Unit]
+Description=Smsverbot MCP admin API (localhost only, for the Telegram bot)
+After=network-online.target smsverbot-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+WorkingDirectory=/opt/smsverbot-mcp
+EnvironmentFile=/opt/smsverbot-mcp/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/smsverbot-mcp/.venv/bin/python admin_api.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/smsverbot-mcp
+
+[Install]
+WantedBy=multi-user.target

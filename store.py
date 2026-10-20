@@ -18,7 +18,14 @@ CREATE TABLE IF NOT EXISTS api_keys (
     label TEXT,
     key_hash TEXT UNIQUE,
     balance_kop INTEGER DEFAULT 0,
-    created_at TEXT
+    created_at TEXT,
+    owner_tg INTEGER
+);
+CREATE TABLE IF NOT EXISTS topup_refs (
+    ref TEXT PRIMARY KEY,
+    key_id TEXT NOT NULL,
+    amount_kop INTEGER NOT NULL,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,8 +72,15 @@ class Store:
         with self._db() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            self._migrate(conn)
         self._rate_lock = threading.Lock()
         self._requests: dict[str, deque[float]] = defaultdict(deque)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)")}
+        if "owner_tg" not in cols:
+            conn.execute("ALTER TABLE api_keys ADD COLUMN owner_tg INTEGER")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
@@ -87,16 +101,67 @@ class Store:
     def _begin(conn: sqlite3.Connection) -> None:
         conn.execute("BEGIN IMMEDIATE")
 
-    def create_key(self, label: str) -> tuple[str, str]:
+    def create_key(self, label: str, owner_tg: int | None = None) -> tuple[str, str]:
         key_id = uuid.uuid4().hex
         plain_key = "svb_" + secrets.token_urlsafe(32)
         with self._db() as conn:
             conn.execute(
-                "INSERT INTO api_keys (id, label, key_hash, balance_kop, created_at)"
-                " VALUES (?, ?, ?, 0, ?)",
-                (key_id, label, hash_key(plain_key), now_iso()),
+                "INSERT INTO api_keys (id, label, key_hash, balance_kop, created_at, owner_tg)"
+                " VALUES (?, ?, ?, 0, ?, ?)",
+                (key_id, label, hash_key(plain_key), now_iso(), owner_tg),
             )
         return key_id, plain_key
+
+    def list_keys_by_owner(self, owner_tg: int) -> list[dict[str, Any]]:
+        with self._db() as conn:
+            rows = conn.execute(
+                "SELECT id, label, balance_kop, created_at, key_hash FROM api_keys"
+                " WHERE owner_tg = ? ORDER BY created_at DESC",
+                (int(owner_tg),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def topup_once(self, key_id: str, amount_kop: int, ref: str) -> bool:
+        amount = int(amount_kop)
+        if amount <= 0:
+            raise ValueError("amount_kop must be positive")
+        if not ref:
+            raise ValueError("ref is required")
+        conn = self._connect()
+        try:
+            self._begin(conn)
+            row = conn.execute(
+                "SELECT balance_kop FROM api_keys WHERE id = ?", (key_id,)
+            ).fetchone()
+            if not row:
+                conn.rollback()
+                raise KeyError(key_id)
+            try:
+                conn.execute(
+                    "INSERT INTO topup_refs (ref, key_id, amount_kop, created_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (ref, key_id, amount, now_iso()),
+                )
+            except sqlite3.IntegrityError:
+                conn.rollback()
+                return False
+            conn.execute(
+                "UPDATE api_keys SET balance_kop = balance_kop + ? WHERE id = ?",
+                (amount, key_id),
+            )
+            conn.execute(
+                "INSERT INTO ledger (key_id, order_id, amount_kop, kind, created_at)"
+                " VALUES (?, NULL, ?, 'topup', ?)",
+                (key_id, amount, now_iso()),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def find_key(self, plain_key: str) -> dict[str, Any] | None:
         with self._db() as conn:

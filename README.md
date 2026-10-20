@@ -4,6 +4,27 @@ MCP-сервер, который продаёт AI-агентам номера �
 
 Деньги хранятся в целых копейках. Баланс предоплаченный: агент пополняет счёт, покупка номера списывает стоимость, отмена возвращает её ровно один раз.
 
+## Подключение за 30 секунд (хостед, без установки)
+
+Эндпоинт: `https://mcp.188.137.227.14.sslip.io/mcp` (streamable HTTP, TLS).
+
+Claude Code:
+```bash
+claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
+```
+
+Cursor (`~/.cursor/mcp.json`):
+```json
+{ "mcpServers": { "smsverbot": { "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
+```
+
+VS Code (`.vscode/mcp.json`):
+```json
+{ "servers": { "smsverbot": { "type": "http", "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
+```
+
+Дальше: получить API-ключ у Telegram-бота @Smsverbot, положить баланс и передавать ключ первым аргументом `api_key` в любой инструмент. Первый вызов для проверки — `get_balance`.
+
 ## Возможности
 
 - 8 MCP-инструментов для каталога, цен, покупки, ожидания кода, отмены, баланса и истории.

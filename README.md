@@ -2,6 +2,16 @@
 
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-published-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.MassimoSun/smsverbot-mcp)
 
+**SMS verification for AI agents.** An MCP server that lets an agent buy a real phone number, wait for the confirmation code, and cancel the order with a refund if the code never arrives. Remote streamable-HTTP endpoint, prepaid balance, pay-as-you-go — no subscriptions.
+
+Works with Claude Code, Cursor, VS Code, Codex, Hermes and any MCP client. Keywords: MCP server, model context protocol, SMS verification, SMS activation, virtual numbers, AI agents, phone verification.
+
+- Endpoint: `https://mcp.188.137.227.14.sslip.io/mcp`
+- Get an API key and top up the balance in Telegram: [@Smsverbot](https://t.me/Smsverbot)
+- Tools: `list_services`, `list_countries`, `get_price`, `buy_number`, `wait_for_code`, `cancel_order`, `get_balance`, `order_history`, `whoami`
+
+---
+
 MCP-сервер, который продаёт AI-агентам номера для приёма SMS-кодов подтверждения. Это отдельный продукт, не связанный с Telegram-ботом. Работает без собственного UI и веб-фреймворка: агент подключается по stdio или streamable HTTP и вызывает инструменты MCP.
 
 Деньги хранятся в целых копейках. Баланс предоплаченный: агент пополняет счёт, покупка номера списывает стоимость, отмена возвращает её ровно один раз.

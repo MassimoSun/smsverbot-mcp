@@ -54,6 +54,8 @@ def _handle(exc: Exception) -> dict[str, Any]:
 
 
 def _key_id(api_key: str) -> str:
+    if api_key == "":
+        api_key = settings.default_api_key
     row = store.find_key(api_key)
     if not row:
         raise InvalidKey("Invalid API key")
@@ -75,11 +77,11 @@ def _order_data(order: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def list_services(api_key: str) -> dict[str, Any]:
-    """List services available for SMS activation."""
+async def list_services(api_key: str, country: str = "indonesia") -> dict[str, Any]:
+    """List services available for SMS activation in a country."""
     try:
         _key_id(api_key)
-        services = await provider.list_services()
+        services = await provider.list_services(country)
         return {"ok": True, "services": services}
     except Exception as exc:
         return _handle(exc)

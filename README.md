@@ -38,6 +38,7 @@ python -m venv .venv
 | Переменная | По умолчанию | Назначение |
 | --- | --- | --- |
 | `MCP_DB` | `./mcp.db` | Путь к SQLite-базе |
+| `MCP_API_KEY` | пусто | Ключ по умолчанию для stdio-клиентов, если `api_key` передан пустым |
 | `PROVIDER` | `mock` | `mock` или `fivesim` |
 | `FIVESIM_TOKEN` | пусто | Токен 5sim, обязателен для `fivesim` |
 | `MCP_MARKUP` | `2.5` | Наценка к закупочной цене |
@@ -83,6 +84,36 @@ HTTP-транспорт (streamable HTTP):
 
 Вторая команда пополняет баланс на 500 рублей (50000 копеек).
 
+## Админ: выдача ключей
+
+`admin.py` читает путь к базе из `MCP_DB` (по умолчанию `./mcp.db`).
+
+Создать ключ с меткой и сразу пополнить баланс на 500 рублей:
+
+```bat
+python admin.py create --label client1 --topup 500
+```
+
+Показать все ключи (ID, метка, баланс в рублях):
+
+```bat
+python admin.py list
+```
+
+Пополнить баланс ключа на 200 рублей:
+
+```bat
+python admin.py topup --key-id ID --amount 200
+```
+
+Показать последние заказы ключа:
+
+```bat
+python admin.py orders --key-id ID
+```
+
+Открытый API-ключ показывается только один раз при создании.
+
 ## Подключение MCP-клиентов
 
 Во всех примерах замените путь на абсолютный путь к `server.py`. Для live-режима добавьте `PROVIDER` и `FIVESIM_TOKEN` в блок `env`.
@@ -116,6 +147,12 @@ HTTP-транспорт (streamable HTTP):
 claude mcp add smsverbot -- python server.py --stdio
 ```
 
+Публичный HTTP-сервер:
+
+```bash
+claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
+```
+
 Для отдельной базы и live-провайдера передайте переменные окружения в оболочке перед запуском команды.
 
 ### Hermes и другие MCP-клиенты
@@ -124,11 +161,11 @@ claude mcp add smsverbot -- python server.py --stdio
 
 ## Инструменты
 
-Все инструменты принимают `api_key` первым аргументом. Успех: `{"ok": true, ...}`. Ошибка: `{"ok": false, "error": "CODE", "message": "..."}`. Коды ошибок: `UNAUTHORIZED`, `INSUFFICIENT_FUNDS`, `RATE_LIMITED`, `DAILY_LIMIT`, `ORDER_NOT_FOUND`, `NO_NUMBERS`, `UNAVAILABLE`, `UPSTREAM_ERROR`, `INTERNAL`.
+Все инструменты принимают `api_key` первым аргументом. Если передать пустую строку, используется `MCP_API_KEY` из окружения. Успех: `{"ok": true, ...}`. Ошибка: `{"ok": false, "error": "CODE", "message": "..."}`. Коды ошибок: `UNAUTHORIZED`, `INSUFFICIENT_FUNDS`, `RATE_LIMITED`, `DAILY_LIMIT`, `ORDER_NOT_FOUND`, `NO_NUMBERS`, `UNAVAILABLE`, `UPSTREAM_ERROR`, `INTERNAL`.
 
 | Инструмент | Описание |
 | --- | --- |
-| `list_services` | Список доступных сервисов |
+| `list_services(country="indonesia")` | Список доступных сервисов |
 | `list_countries` | Список доступных стран |
 | `get_price(service, country)` | Розничная цена без покупки и списания |
 | `buy_number(service, country)` | Купить номер и списать баланс |
@@ -189,4 +226,5 @@ claude mcp add smsverbot -- python server.py --stdio
 - `providers/` — протокол, mock- и 5sim-адаптеры.
 - `service.py` — бизнес-логика цен, покупки, ожидания и отмены.
 - `server.py` — FastMCP, 8 инструментов и CLI.
+- `admin.py`, `admin_service.py` — админ-CLI и операции с ключами в рублях.
 - `tests/` — сервисные тесты и интеграционный тест MCP-клиента.

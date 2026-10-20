@@ -35,7 +35,7 @@ class MockProvider:
         self._counter = 0
         self._orders: dict[str, dict] = {}
 
-    async def list_services(self) -> list[dict]:
+    async def list_services(self, country: str = "indonesia") -> list[dict]:
         return [dict(item) for item in SERVICES]
 
     async def list_countries(self) -> list[dict]:

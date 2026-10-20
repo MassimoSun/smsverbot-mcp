@@ -53,6 +53,7 @@ DEFAULT_ALLOWED_ORIGINS = ["https://mcp.188.137.227.14.sslip.io"]
 @dataclass
 class Settings:
     db_path: str = "./mcp.db"
+    default_api_key: str = ""
     provider: str = "mock"
     fivesim_token: str = ""
     markup: float = 2.5
@@ -78,6 +79,7 @@ class Settings:
             provider = "mock"
         return cls(
             db_path=os.environ.get("MCP_DB", "./mcp.db"),
+            default_api_key=os.environ.get("MCP_API_KEY", "").strip(),
             provider=provider,
             fivesim_token=os.environ.get("FIVESIM_TOKEN", "").strip(),
             markup=_env_float("MCP_MARKUP", 2.5),

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import inspect
 import json
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from config import Settings
@@ -38,6 +40,20 @@ mcp = FastMCP(
 )
 
 
+def _accept_positional(fn):
+    signature = inspect.signature(fn, eval_str=True)
+    names = list(signature.parameters)
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        if args:
+            kwargs.update(zip(names, args))
+        return await fn(**kwargs)
+
+    wrapper.__signature__ = signature
+    return wrapper
+
+
 def _error(code: str, message: str) -> dict[str, Any]:
     return {"ok": False, "error": code, "message": message}
 
@@ -51,6 +67,22 @@ def _handle(exc: Exception) -> dict[str, Any]:
         return _error("UNAUTHORIZED", "Invalid API key")
     logging.getLogger("smsverbot").exception("unhandled tool error")
     return _error("INTERNAL", "Unexpected server error")
+
+
+def resolve_api_key(api_key: str, ctx: Context | None = None) -> str:
+    if api_key and api_key.strip():
+        return api_key.strip()
+    if settings.default_api_key:
+        return settings.default_api_key
+    try:
+        headers = ctx.request_context.request.headers
+        raw = headers.get("authorization") or headers.get("Authorization") or ""
+    except (AttributeError, ValueError, TypeError):
+        return ""
+    value = str(raw).strip()
+    if value.lower().startswith("bearer "):
+        return value[len("bearer ") :].strip()
+    return ""
 
 
 def _key_id(api_key: str) -> str:
@@ -77,10 +109,12 @@ def _order_data(order: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def list_services(api_key: str, country: str = "indonesia") -> dict[str, Any]:
+async def list_services(
+    api_key: str = "", country: str = "indonesia", ctx: Context = None
+) -> dict[str, Any]:
     """List services available for SMS activation in a country."""
     try:
-        _key_id(api_key)
+        _key_id(resolve_api_key(api_key, ctx))
         services = await provider.list_services(country)
         return {"ok": True, "services": services}
     except Exception as exc:
@@ -88,10 +122,10 @@ async def list_services(api_key: str, country: str = "indonesia") -> dict[str, A
 
 
 @mcp.tool()
-async def list_countries(api_key: str) -> dict[str, Any]:
+async def list_countries(api_key: str = "", ctx: Context = None) -> dict[str, Any]:
     """List countries available for SMS activation."""
     try:
-        _key_id(api_key)
+        _key_id(resolve_api_key(api_key, ctx))
         countries = await provider.list_countries()
         return {"ok": True, "countries": countries}
     except Exception as exc:
@@ -99,10 +133,13 @@ async def list_countries(api_key: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def get_price(api_key: str, service: str, country: str) -> dict[str, Any]:
+@_accept_positional
+async def get_price(
+    api_key: str = "", *, service: str, country: str, ctx: Context = None
+) -> dict[str, Any]:
     """Get the retail price for a service and country without buying."""
     try:
-        _key_id(api_key)
+        _key_id(resolve_api_key(api_key, ctx))
         quote = await sales.quote(service, country)
         return {"ok": True, **quote}
     except Exception as exc:
@@ -110,10 +147,13 @@ async def get_price(api_key: str, service: str, country: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def buy_number(api_key: str, service: str, country: str) -> dict[str, Any]:
+@_accept_positional
+async def buy_number(
+    api_key: str = "", *, service: str, country: str, ctx: Context = None
+) -> dict[str, Any]:
     """Buy a phone number and debit the prepaid balance."""
     try:
-        key_id = _key_id(api_key)
+        key_id = _key_id(resolve_api_key(api_key, ctx))
         bought = await sales.buy(key_id, service, country)
         balance = sales.balance(key_id)
         return {"ok": True, **bought, "balance_kop": balance}
@@ -122,10 +162,13 @@ async def buy_number(api_key: str, service: str, country: str) -> dict[str, Any]
 
 
 @mcp.tool()
-async def wait_for_code(api_key: str, order_id: int) -> dict[str, Any]:
+@_accept_positional
+async def wait_for_code(
+    api_key: str = "", *, order_id: int, ctx: Context = None
+) -> dict[str, Any]:
     """Wait for an SMS code for an existing order."""
     try:
-        key_id = _key_id(api_key)
+        key_id = _key_id(resolve_api_key(api_key, ctx))
         result = await sales.wait_for_code(key_id, order_id)
         return {"ok": True, **result}
     except Exception as exc:
@@ -133,10 +176,13 @@ async def wait_for_code(api_key: str, order_id: int) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def cancel_order(api_key: str, order_id: int) -> dict[str, Any]:
+@_accept_positional
+async def cancel_order(
+    api_key: str = "", *, order_id: int, ctx: Context = None
+) -> dict[str, Any]:
     """Cancel an order and refund the balance exactly once."""
     try:
-        key_id = _key_id(api_key)
+        key_id = _key_id(resolve_api_key(api_key, ctx))
         result = await sales.cancel(key_id, order_id)
         balance = sales.balance(key_id)
         return {"ok": True, **result, "balance_kop": balance}
@@ -145,10 +191,10 @@ async def cancel_order(api_key: str, order_id: int) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def get_balance(api_key: str) -> dict[str, Any]:
+async def get_balance(api_key: str = "", ctx: Context = None) -> dict[str, Any]:
     """Return the current prepaid balance."""
     try:
-        key_id = _key_id(api_key)
+        key_id = _key_id(resolve_api_key(api_key, ctx))
         balance_kop = sales.balance(key_id)
         return {
             "ok": True,
@@ -161,12 +207,25 @@ async def get_balance(api_key: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def order_history(api_key: str, limit: int = 10) -> dict[str, Any]:
+async def order_history(
+    api_key: str = "", limit: int = 10, ctx: Context = None
+) -> dict[str, Any]:
     """Return recent orders for the API key."""
     try:
-        key_id = _key_id(api_key)
+        key_id = _key_id(resolve_api_key(api_key, ctx))
         orders = [_order_data(o) for o in sales.history(key_id, limit)]
         return {"ok": True, "orders": orders}
+    except Exception as exc:
+        return _handle(exc)
+
+
+@mcp.tool()
+async def whoami(api_key: str = "", ctx: Context = None) -> dict[str, Any]:
+    """Verify an API key and return its id and balance in rubles."""
+    try:
+        key_id = _key_id(resolve_api_key(api_key, ctx))
+        balance_kop = sales.balance(key_id)
+        return {"ok": True, "key_id": key_id, "balance_rub": balance_kop / 100}
     except Exception as exc:
         return _handle(exc)
 

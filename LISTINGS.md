@@ -28,9 +28,9 @@
 
 **Name:** Smsverbot — SMS verification for AI agents
 **Short:** Buy a real phone number, wait for the SMS code, cancel with automatic refund. 153 countries, 2500+ services, prepaid RUB balance, pay-as-you-go.
-**Tools (8):** list_services, list_countries, get_price, buy_number, wait_for_code, cancel_order, get_balance, order_history
+**Tools (9):** list_services, list_countries, get_price, buy_number, wait_for_code, cancel_order, get_balance, order_history, whoami
 **Transport:** streamable HTTP `https://mcp.188.137.227.14.sslip.io/mcp`, plus stdio (`python server.py --stdio`)
-**Auth:** API key (first argument of every tool), issued in the Telegram bot, balance top-up there too
+**Auth:** API key — either `Authorization: Bearer <key>` header (hosted mode) or the first `api_key` argument; issued in the Telegram bot, balance top-up there too
 **Tags:** sms, otp, verification, phone-number, virtual-number, telegram, whatsapp, agents
 
 ## Чего в каталогах быть не должно

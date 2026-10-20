@@ -25,6 +25,7 @@ EXPECTED_TOOLS = {
     "cancel_order",
     "get_balance",
     "order_history",
+    "whoami",
 }
 
 pytestmark = pytest.mark.asyncio

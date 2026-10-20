@@ -38,6 +38,10 @@ class InvalidKey(ServiceError):
     code = "UNAUTHORIZED"
 
 
+class ProviderUnavailable(ServiceError):
+    code = "UNAVAILABLE"
+
+
 class SalesService:
     def __init__(self, store: Store, provider: Provider, settings: Settings) -> None:
         self.store = store
@@ -55,7 +59,12 @@ class SalesService:
         return ((price + 99) // 100) * 100
 
     async def quote(self, service: str, country: str) -> dict[str, Any]:
-        cost_kop = int(await self.provider.price(service, country))
+        try:
+            cost_kop = int(await self.provider.price(service, country))
+        except ProviderError as exc:
+            if exc.code == "UNAVAILABLE":
+                raise ProviderUnavailable(str(exc)) from exc
+            raise
         return {
             "service": service,
             "country": country,
@@ -71,7 +80,12 @@ class SalesService:
             raise DailyLimitExceeded("Daily code limit reached")
 
         quote = await self.quote(service, country)
-        bought = await self.provider.buy(service, country)
+        try:
+            bought = await self.provider.buy(service, country)
+        except ProviderError as exc:
+            if exc.code == "UNAVAILABLE":
+                raise ProviderUnavailable(str(exc)) from exc
+            raise
         provider_order_id = str(bought["provider_order_id"])
         phone = str(bought["phone"])
         cost_kop = int(bought.get("cost_kop") or quote["cost_kop"])

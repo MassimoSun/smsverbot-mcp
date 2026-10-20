@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from config import Settings
-from providers.base import ProviderError
 from providers.mock import MockProvider
 from service import (
     DailyLimitExceeded,
@@ -13,6 +12,7 @@ from service import (
     OrderNotFound,
     RateLimited,
     SalesService,
+    ServiceError,
 )
 from store import Store, ledger_sum
 
@@ -156,9 +156,9 @@ async def test_rate_limiter_blocks_21st_request(tmp_path):
     assert env.store.allow_request(env.key_id) is False
 
 
-async def test_unknown_service_raises_provider_error(tmp_path):
+async def test_unknown_service_raises_service_error(tmp_path):
     env = make_env(tmp_path)
-    with pytest.raises(ProviderError) as exc:
+    with pytest.raises(ServiceError) as exc:
         await env.service.quote("unknown", "ru")
     assert exc.value.code == "UNAVAILABLE"
 

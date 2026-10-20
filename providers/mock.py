@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from providers.base import ProviderError
+from providers.countries import to_iso
 
 SERVICES = [
     {"code": "telegram", "name": "Telegram"},
@@ -41,10 +42,12 @@ class MockProvider:
         return [dict(item) for item in COUNTRIES]
 
     async def price(self, service: str, country: str) -> int:
+        country = to_iso(country)
         self._validate(service, country)
         return PRICES_KOP.get((service, country), DEFAULT_PRICE_KOP)
 
     async def buy(self, service: str, country: str) -> dict:
+        country = to_iso(country)
         self._validate(service, country)
         self._counter += 1
         provider_order_id = f"mock-{self._counter}"

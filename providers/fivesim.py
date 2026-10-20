@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from providers.base import ProviderError
+from providers.countries import to_iso, to_provider_country
 
 BASE_URL = "https://5sim.net/v1"
 
@@ -52,11 +53,33 @@ class FiveSimProvider:
         except httpx.HTTPError as exc:
             raise ProviderError("UPSTREAM_ERROR", str(exc)) from exc
         text = response.text
-        if response.status_code == 400 and "no free phones" in text.lower():
-            raise ProviderError("NO_NUMBERS", "No free phones")
-        if response.status_code >= 400:
+        lowered = text.lower()
+        status = response.status_code
+        if status == 400:
+            if (
+                "bad country" in lowered
+                or "country is incorrect" in lowered
+                or "incorrect country" in lowered
+            ):
+                raise ProviderError(
+                    "UNAVAILABLE",
+                    f"Country is not available on 5sim: {text[:200]}",
+                )
+            if "no free phones" in lowered or "no numbers" in lowered:
+                raise ProviderError("NO_NUMBERS", "No free phones")
+        if status == 404:
             raise ProviderError(
-                "UPSTREAM_ERROR", f"5sim HTTP {response.status_code}: {text[:200]}"
+                "UNAVAILABLE", f"5sim resource not found: {text[:200]}"
+            )
+        if status in {401, 403}:
+            raise ProviderError(
+                "UNAUTHORIZED", f"5sim authorization failed: {text[:200]}"
+            )
+        if status == 429:
+            raise ProviderError("RATE_LIMITED", "5sim rate limit exceeded")
+        if status >= 400:
+            raise ProviderError(
+                "UPSTREAM_ERROR", f"5sim HTTP {status}: {text[:200]}"
             )
         try:
             return response.json()
@@ -75,12 +98,13 @@ class FiveSimProvider:
         if not isinstance(data, dict):
             raise ProviderError("UPSTREAM_ERROR", "Unexpected countries payload")
         return [
-            {"code": code, "name": info.get("text_en") or code}
+            {"code": to_iso(code), "name": info.get("text_en") or code}
             for code, info in sorted(data.items())
             if isinstance(info, dict)
         ]
 
     async def list_services(self, country: str = "russia") -> list[dict]:
+        country = to_provider_country(country)
         data = await self._get(f"/guest/products/{country}/any")
         if not isinstance(data, dict):
             raise ProviderError("UPSTREAM_ERROR", "Unexpected services payload")
@@ -91,6 +115,7 @@ class FiveSimProvider:
         ]
 
     async def list_services_by_country(self, country: str) -> list[dict]:
+        country = to_provider_country(country)
         data = await self._get(f"/guest/products/{country}/any")
         if not isinstance(data, dict):
             raise ProviderError("UPSTREAM_ERROR", "Unexpected services payload")
@@ -101,6 +126,7 @@ class FiveSimProvider:
         ]
 
     async def price(self, service: str, country: str) -> int:
+        country = to_provider_country(country)
         data = await self._get(
             "/guest/prices", params={"country": country, "product": service}
         )
@@ -131,6 +157,7 @@ class FiveSimProvider:
         return min(candidates)
 
     async def buy(self, service: str, country: str) -> dict:
+        country = to_provider_country(country)
         data = await self._get(f"/user/buy/activation/{country}/any/{service}")
         if not isinstance(data, dict):
             raise ProviderError("UPSTREAM_ERROR", "Unexpected buy payload")

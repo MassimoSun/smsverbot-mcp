@@ -108,6 +108,11 @@ class Handler(BaseHTTPRequestHandler):
                         "balance_rub": _rub(row["balance_kop"]),
                         "created_at": row["created_at"],
                         "masked_key": str(row["key_hash"])[:8],
+                        "revoked": bool(row.get("revoked_at")),
+                        "daily_limit_rub": _rub(row["daily_limit_kop"])
+                        if row.get("daily_limit_kop") is not None
+                        else None,
+                        "spent_today_rub": _rub(self.store.spend_today_kop(row["id"])),
                     }
                     for row in rows
                 ]
@@ -192,6 +197,55 @@ class Handler(BaseHTTPRequestHandler):
                         "key_id": key_id,
                         "balance_rub": _rub(self.store.get_balance(key_id)),
                         "credited": bool(credited),
+                    },
+                )
+            if path.startswith("/keys/") and path.endswith("/reissue"):
+                key_id = path[len("/keys/") : -len("/reissue")]
+                result = self.store.reissue_key(key_id)
+                if not result:
+                    return self._fail(404, "NOT_FOUND", "Unknown key or already revoked")
+                new_key_id, api_key = result
+                return self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "old_key_id": key_id,
+                        "key_id": new_key_id,
+                        "api_key": api_key,
+                        "balance_rub": _rub(self.store.get_balance(new_key_id)),
+                    },
+                )
+            if path.startswith("/keys/") and path.endswith("/revoke"):
+                key_id = path[len("/keys/") : -len("/revoke")]
+                if not key_id:
+                    return self._fail(400, "VALIDATION", "key_id is required")
+                if not self.store.revoke_key(key_id):
+                    return self._fail(404, "NOT_FOUND", "Unknown key or already revoked")
+                return self._json(200, {"ok": True, "key_id": key_id, "revoked": True})
+            if path.startswith("/keys/") and path.endswith("/limit"):
+                key_id = path[len("/keys/") : -len("/limit")]
+                data = self._body()
+                if data is None:
+                    return
+                raw = data.get("amount_rub")
+                if raw is None:
+                    limit_kop = None
+                else:
+                    try:
+                        amount = float(raw)
+                    except (TypeError, ValueError):
+                        return self._fail(400, "VALIDATION", "amount_rub must be a number or null")
+                    if amount < 0 or amount > 100000:
+                        return self._fail(400, "VALIDATION", "amount_rub out of range")
+                    limit_kop = int(round(amount * 100))
+                if not self.store.set_daily_limit(key_id, limit_kop):
+                    return self._fail(404, "NOT_FOUND", "Unknown key_id")
+                return self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "key_id": key_id,
+                        "daily_limit_rub": None if limit_kop is None else _rub(limit_kop),
                     },
                 )
             return self._fail(404, "NOT_FOUND", "Unknown route")

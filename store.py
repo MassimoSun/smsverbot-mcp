@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
     key_hash TEXT UNIQUE,
     balance_kop INTEGER DEFAULT 0,
     created_at TEXT,
-    owner_tg INTEGER
+    owner_tg INTEGER,
+    revoked_at TEXT,
+    daily_limit_kop INTEGER
 );
 CREATE TABLE IF NOT EXISTS topup_refs (
     ref TEXT PRIMARY KEY,
@@ -75,12 +77,17 @@ class Store:
             self._migrate(conn)
         self._rate_lock = threading.Lock()
         self._requests: dict[str, deque[float]] = defaultdict(deque)
+        self._waits: dict[str, int] = defaultdict(int)
 
     @staticmethod
     def _migrate(conn: sqlite3.Connection) -> None:
         cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)")}
         if "owner_tg" not in cols:
             conn.execute("ALTER TABLE api_keys ADD COLUMN owner_tg INTEGER")
+        if "revoked_at" not in cols:
+            conn.execute("ALTER TABLE api_keys ADD COLUMN revoked_at TEXT")
+        if "daily_limit_kop" not in cols:
+            conn.execute("ALTER TABLE api_keys ADD COLUMN daily_limit_kop INTEGER")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
@@ -115,8 +122,8 @@ class Store:
     def list_keys_by_owner(self, owner_tg: int) -> list[dict[str, Any]]:
         with self._db() as conn:
             rows = conn.execute(
-                "SELECT id, label, balance_kop, created_at, key_hash FROM api_keys"
-                " WHERE owner_tg = ? ORDER BY created_at DESC",
+                "SELECT id, label, balance_kop, created_at, key_hash, revoked_at, daily_limit_kop"
+                " FROM api_keys WHERE owner_tg = ? ORDER BY created_at DESC",
                 (int(owner_tg),),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -168,7 +175,108 @@ class Store:
             row = conn.execute(
                 "SELECT * FROM api_keys WHERE key_hash = ?", (hash_key(plain_key),)
             ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        key = dict(row)
+        if key.get("revoked_at"):
+            return None
+        return key
+
+    def revoke_key(self, key_id: str) -> bool:
+        with self._db() as conn:
+            cur = conn.execute(
+                "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+                (now_iso(), key_id),
+            )
+        return cur.rowcount > 0
+
+    def set_daily_limit(self, key_id: str, limit_kop: int | None) -> bool:
+        with self._db() as conn:
+            cur = conn.execute(
+                "UPDATE api_keys SET daily_limit_kop = ? WHERE id = ?", (limit_kop, key_id)
+            )
+        return cur.rowcount > 0
+
+    def reissue_key(self, key_id: str) -> tuple[str, str] | None:
+        """Отозвать ключ и выдать новый с тем же балансом (одна транзакция)."""
+        new_id = uuid.uuid4().hex
+        plain_key = "svb_" + secrets.token_urlsafe(32)
+        conn = self._connect()
+        try:
+            self._begin(conn)
+            row = conn.execute(
+                "SELECT * FROM api_keys WHERE id = ?", (key_id,)
+            ).fetchone()
+            if not row or row["revoked_at"]:
+                conn.rollback()
+                return None
+            balance = int(row["balance_kop"])
+            owner = row["owner_tg"]
+            conn.execute(
+                "UPDATE api_keys SET revoked_at = ?, balance_kop = 0 WHERE id = ?",
+                (now_iso(), key_id),
+            )
+            conn.execute(
+                "INSERT INTO api_keys (id, label, key_hash, balance_kop, created_at, owner_tg,"
+                " daily_limit_kop) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (new_id, f"tg{owner}" if owner else row["label"], hash_key(plain_key),
+                 balance, now_iso(), owner, row["daily_limit_kop"]),
+            )
+            conn.execute(
+                "INSERT INTO ledger (key_id, order_id, amount_kop, kind, created_at)"
+                " VALUES (?, NULL, ?, 'reissue_out', ?)",
+                (key_id, -balance, now_iso()),
+            )
+            conn.execute(
+                "INSERT INTO ledger (key_id, order_id, amount_kop, kind, created_at)"
+                " VALUES (?, NULL, ?, 'reissue_in', ?)",
+                (new_id, balance, now_iso()),
+            )
+            conn.commit()
+            return new_id, plain_key
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def key_daily_limit(self, key_id: str) -> int | None:
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT daily_limit_kop FROM api_keys WHERE id = ?", (key_id,)
+            ).fetchone()
+        if not row or row["daily_limit_kop"] is None:
+            return None
+        return int(row["daily_limit_kop"])
+
+    def spend_today_kop(self, key_id: str) -> int:
+        today = datetime.now(timezone.utc).date().isoformat()
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(-amount_kop), 0) AS spent FROM ledger"
+                " WHERE key_id = ? AND kind IN ('debit', 'refund')"
+                " AND substr(created_at, 1, 10) = ?",
+                (key_id, today),
+            ).fetchone()
+        return int(row["spent"]) if row else 0
+
+    def try_begin_wait(self, key_id: str, per_key: int, global_max: int) -> bool:
+        with self._rate_lock:
+            if self._waits.get("__all__", 0) >= global_max:
+                return False
+            if self._waits.get(key_id, 0) >= per_key:
+                return False
+            self._waits[key_id] = self._waits.get(key_id, 0) + 1
+            self._waits["__all__"] = self._waits.get("__all__", 0) + 1
+            return True
+
+    def end_wait(self, key_id: str) -> None:
+        with self._rate_lock:
+            if self._waits.get(key_id, 0) > 0:
+                self._waits[key_id] -= 1
+            if self._waits.get("__all__", 0) > 0:
+                self._waits["__all__"] -= 1
 
     def get_balance(self, key_id: str) -> int:
         with self._db() as conn:

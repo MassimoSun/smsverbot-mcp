@@ -59,6 +59,9 @@ class Settings:
     markup: float = 2.5
     rate_limit_per_15min: int = 20
     daily_code_limit: int = 200
+    daily_spend_limit_rub: int = 1000
+    max_waits_per_key: int = 2
+    max_waits_global: int = 50
     code_wait_seconds: int = 120
     usd_kop_rate: int = 9200
     host: str = "127.0.0.1"
@@ -85,6 +88,9 @@ class Settings:
             markup=_env_float("MCP_MARKUP", 2.5),
             rate_limit_per_15min=_env_int("RATE_LIMIT_PER_15MIN", 20),
             daily_code_limit=_env_int("DAILY_CODE_LIMIT", 200),
+            daily_spend_limit_rub=_env_int("DAILY_SPEND_LIMIT_RUB", 1000),
+            max_waits_per_key=_env_int("MAX_WAITS_PER_KEY", 2),
+            max_waits_global=_env_int("MAX_WAITS_GLOBAL", 50),
             code_wait_seconds=_env_int("CODE_WAIT_SECONDS", 120),
             usd_kop_rate=_env_int("USD_KOP_RATE", 9200),
             allowed_hosts=_env_list("MCP_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS),

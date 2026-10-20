@@ -80,6 +80,13 @@ class SalesService:
             raise DailyLimitExceeded("Daily code limit reached")
 
         quote = await self.quote(service, country)
+        limit_kop = self.store.key_daily_limit(key_id) or self.settings.daily_spend_limit_rub * 100
+        spent_kop = self.store.spend_today_kop(key_id)
+        if spent_kop + int(quote["price_kop"]) > int(limit_kop):
+            raise DailyLimitExceeded(
+                f"Daily spend limit reached: spent {spent_kop / 100:.2f} of "
+                f"{limit_kop / 100:.2f} RUB today"
+            )
         try:
             bought = await self.provider.buy(service, country)
         except ProviderError as exc:
@@ -149,6 +156,18 @@ class SalesService:
             if timeout is None
             else min(float(timeout), float(self.settings.code_wait_seconds))
         )
+        if not self.store.try_begin_wait(
+            key_id, self.settings.max_waits_per_key, self.settings.max_waits_global
+        ):
+            raise RateLimited(
+                "Too many parallel wait_for_code calls: finish or cancel the current ones first"
+            )
+        try:
+            return await self._poll_code(order, order_id, wait)
+        finally:
+            self.store.end_wait(key_id)
+
+    async def _poll_code(self, order: dict[str, Any], order_id: int, wait: float) -> dict[str, Any]:
         deadline = time.monotonic() + max(0.0, wait)
         while True:
             code = await self.provider.code(order["provider_order_id"])

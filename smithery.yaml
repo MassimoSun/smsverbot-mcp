@@ -1,0 +1,31 @@
+# Smithery configuration for smsverbot-mcp
+# https://smithery.ai/docs/build/project-config
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - apiKey
+    properties:
+      apiKey:
+        type: string
+        title: Smsverbot API key
+        description: Prepaid API key from @Smsverbot. Create it in the bot, top up the balance, then paste the key here.
+      provider:
+        type: string
+        title: Provider
+        default: fivesim
+        enum:
+          - fivesim
+          - mock
+        description: Number provider. mock is offline and only for demos.
+  commandFunction: |-
+    (config) => ({
+      command: "python",
+      args: ["server.py", "--stdio"],
+      env: {
+        PROVIDER: config.provider || "fivesim",
+        MCP_API_KEY: config.apiKey,
+        MCP_DB: "./mcp.db"
+      }
+    })

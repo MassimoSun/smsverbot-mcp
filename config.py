@@ -33,6 +33,23 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_list(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default)
+    items = [item.strip() for item in raw.split(",")]
+    return [item for item in items if item]
+
+
+DEFAULT_ALLOWED_HOSTS = [
+    "127.0.0.1:8765",
+    "localhost:8765",
+    "mcp.188.137.227.14.sslip.io",
+    "mcp.188.137.227.14.sslip.io:443",
+]
+DEFAULT_ALLOWED_ORIGINS = ["https://mcp.188.137.227.14.sslip.io"]
+
+
 @dataclass
 class Settings:
     db_path: str = "./mcp.db"
@@ -45,6 +62,12 @@ class Settings:
     usd_kop_rate: int = 9200
     host: str = "127.0.0.1"
     port: int = 8765
+    allowed_hosts: list[str] = field(
+        default_factory=lambda: list(DEFAULT_ALLOWED_HOSTS)
+    )
+    allowed_origins: list[str] = field(
+        default_factory=lambda: list(DEFAULT_ALLOWED_ORIGINS)
+    )
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -62,4 +85,6 @@ class Settings:
             daily_code_limit=_env_int("DAILY_CODE_LIMIT", 200),
             code_wait_seconds=_env_int("CODE_WAIT_SECONDS", 120),
             usd_kop_rate=_env_int("USD_KOP_RATE", 9200),
+            allowed_hosts=_env_list("MCP_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS),
+            allowed_origins=_env_list("MCP_ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS),
         )

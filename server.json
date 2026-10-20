@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.massimosun/smsverbot",
+  "description": "SMS verification codes for AI agents: list services and countries, get live prices, buy a real number, wait for the code, cancel with automatic refund. Prepaid balance in RUB, pay-as-you-go, no subscription.",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/MassimoSun/smsverbot-mcp",
+  "repository": {
+    "url": "https://github.com/MassimoSun/smsverbot-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.188.137.227.14.sslip.io/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "smsverbot-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

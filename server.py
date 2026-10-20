@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from config import Settings
 from providers.base import ProviderError
@@ -25,7 +26,16 @@ else:
     provider = MockProvider()
 
 sales = SalesService(store, provider, settings)
-mcp = FastMCP("smsverbot", host=settings.host, port=settings.port)
+mcp = FastMCP(
+    "smsverbot",
+    host=settings.host,
+    port=settings.port,
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=settings.allowed_hosts,
+        allowed_origins=settings.allowed_origins,
+        enable_dns_rebinding_protection=True,
+    ),
+)
 
 
 def _error(code: str, message: str) -> dict[str, Any]:

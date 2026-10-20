@@ -17,12 +17,14 @@
 
 ## Порядок публикации
 
-1. **GitHub** — создать `MassimoSun/smsverbot-mcp`, Public, без инициализации → push `master`.
-2. **Official MCP Registry** — `npx @modelcontextprotocol/publisher publish` или PR с `server.json` в `modelcontextprotocol/registry`; нужен GitHub-логин и подтверждение владения namespace `io.github.massimosun`.
-3. **Smithery** — smithery.ai → Add server → GitHub URL; подхватит `smithery.yaml`.
-4. **Glama** — glama.ai/mcp → Submit; индексирует репозиторий автоматически, карточка появляется за 1–2 дня.
-5. **mcp.so** — форма Submit на сайте, поле «GitHub repo URL».
-6. **PulseMCP / awesome-mcp-servers** — PR в список `punkpeye/awesome-mcp-servers` (раздел Finance/Utilities), строка: `- [smsverbot](https://github.com/MassimoSun/smsverbot-mcp) — SMS verification codes for AI agents with prepaid RUB balance.`
+1. ✅ **Official MCP Registry** — опубликовано 20.10.2026: `io.github.MassimoSun/smsverbot-mcp` v0.1.0, статус `active`, remote streamable-http. Проверка: `curl "https://registry.modelcontextprotocol.io/v0/servers?search=smsverbot"`. Повторная публикация: `mcp-publisher publish` (бинарь в `C:\Users\Professional\.local\bin\mcp-publisher.exe`, авторизация через device flow — токен уже сохранён).
+2. **GitHub** — ✅ публичный `MassimoSun/smsverbot-mcp`, ветка `main`.
+3. **Glama** — glama.ai/mcp/servers → Add Server → GitHub URL (аккаунт зарегистрирован 20.10).
+4. **Smithery** — smithery.ai → Add server → GitHub URL (аккаунт зарегистрирован 20.10). Для Python-сервера может понадобиться remote-режим с URL эндпоинта, а не stdio.
+5. **mcp.so** — mcp.so/submit → GitHub repo URL (аккаунт зарегистрирован 20.10).
+6. **awesome-mcp-servers** — PR в `punkpeye/awesome-mcp-servers`, строка ниже.
+
+Старое описание шагов (для истории): имя в реестре обязано совпадать с GitHub-логином по регистру — `io.github.MassimoSun/...`, иначе 403. Описание ≤ 100 символов. Пакет PyPI указывать нельзя, пока он не опубликован.
 
 ## Текст карточки (одинаковый везде)
 

@@ -1,5 +1,7 @@
 # smsverbot-mcp
 
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-published-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.MassimoSun/smsverbot-mcp)
+
 MCP-сервер, который продаёт AI-агентам номера для приёма SMS-кодов подтверждения. Это отдельный продукт, не связанный с Telegram-ботом. Работает без собственного UI и веб-фреймворка: агент подключается по stdio или streamable HTTP и вызывает инструменты MCP.
 
 Деньги хранятся в целых копейках. Баланс предоплаченный: агент пополняет счёт, покупка номера списывает стоимость, отмена возвращает её ровно один раз.

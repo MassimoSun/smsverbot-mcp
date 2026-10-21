@@ -6,7 +6,7 @@
 
 Works with Claude Code, Cursor, VS Code, Codex, Hermes and any MCP client. Keywords: MCP server, model context protocol, SMS verification, SMS activation, virtual numbers, AI agents, phone verification.
 
-- Endpoint: `https://mcp.188.137.227.14.sslip.io/mcp`
+- Endpoint: `https://kremledroid.duckdns.org/mcp`
 - Get an API key and top up the balance in Telegram: [@Smsverbot](https://t.me/Smsverbot)
 - Tools: `list_services`, `list_countries`, `get_price`, `buy_number`, `wait_for_code`, `cancel_order`, `get_balance`, `order_history`, `whoami`
 
@@ -18,21 +18,21 @@ MCP-сервер, который продаёт AI-агентам номера �
 
 ## Подключение за 30 секунд (хостед, без установки)
 
-Эндпоинт: `https://mcp.188.137.227.14.sslip.io/mcp` (streamable HTTP, TLS).
+Эндпоинт: `https://kremledroid.duckdns.org/mcp` (streamable HTTP, TLS).
 
 Claude Code:
 ```bash
-claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
+claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 ```
 
 Cursor (`~/.cursor/mcp.json`):
 ```json
-{ "mcpServers": { "smsverbot": { "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
+{ "mcpServers": { "smsverbot": { "url": "https://kremledroid.duckdns.org/mcp" } } }
 ```
 
 VS Code (`.vscode/mcp.json`):
 ```json
-{ "servers": { "smsverbot": { "type": "http", "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
+{ "servers": { "smsverbot": { "type": "http", "url": "https://kremledroid.duckdns.org/mcp" } } }
 ```
 
 Дальше: получить API-ключ у Telegram-бота @Smsverbot, положить баланс и передать ключ одним из двух способов — заголовком `Authorization: Bearer <ключ>` в конфиге клиента (рекомендуется для хостед-режима) или первым аргументом `api_key` любого инструмента. Проверка, что ключ принят: инструмент `whoami` — отдаёт `key_id` и баланс.
@@ -183,7 +183,7 @@ claude mcp add smsverbot -- python server.py --stdio
 Публичный HTTP-сервер:
 
 ```bash
-claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
+claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 ```
 
 Для отдельной базы и live-провайдера передайте переменные окружения в оболочке перед запуском команды.

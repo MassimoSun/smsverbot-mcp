@@ -125,13 +125,11 @@ class FiveSimProvider:
             if isinstance(info, dict)
         ]
 
-    async def price(self, service: str, country: str) -> int:
-        country = to_provider_country(country)
-        data = await self._get(
-            "/guest/prices", params={"country": country, "product": service}
-        )
-        prices: list[Any] = []
-        costs: list[Any] = []
+    def _cheapest_offer(
+        self, data: Any, service: str, country: str
+    ) -> tuple[int, str]:
+        in_stock: list[tuple[Any, str, str]] = []
+        all_offers: list[tuple[Any, str, str]] = []
         if isinstance(data, dict):
             for country_data in data.values():
                 if not isinstance(country_data, dict):
@@ -139,28 +137,78 @@ class FiveSimProvider:
                 for product_data in country_data.values():
                     if not isinstance(product_data, dict):
                         continue
-                    for provider_data in product_data.values():
+                    for operator, provider_data in product_data.items():
                         if not isinstance(provider_data, dict):
                             continue
+                        try:
+                            count = int(provider_data.get("count") or 0)
+                        except (TypeError, ValueError):
+                            count = 0
                         for field_name, field_value in provider_data.items():
                             if field_value is None:
                                 continue
-                            if field_name.lower() == "price":
-                                prices.append(field_value)
-                            elif field_name.lower() == "cost":
-                                costs.append(field_value)
-        prices = prices or costs
-        candidates = [self._to_kop(p) for p in prices]
-        candidates = [p for p in candidates if p > 0]
-        if not candidates:
-            raise ProviderError("NO_NUMBERS", f"No prices for {service}/{country}")
-        return min(candidates)
+                            field = field_name.lower()
+                            if field not in {"price", "cost"}:
+                                continue
+                            offer = (field_value, str(operator), field)
+                            all_offers.append(offer)
+                            if count > 0:
+                                in_stock.append(offer)
+
+        for offers, use_operator in ((in_stock, True), (all_offers, False)):
+            preferred = [o for o in offers if o[2] == "price"] or [
+                o for o in offers if o[2] == "cost"
+            ]
+            candidates = [
+                (self._to_kop(value), operator)
+                for value, operator, _ in preferred
+            ]
+            candidates = [(cost, operator) for cost, operator in candidates if cost > 0]
+            if candidates:
+                cost, operator = min(candidates, key=lambda item: item[0])
+                return cost, operator if use_operator else "any"
+        raise ProviderError("NO_NUMBERS", f"No prices for {service}/{country}")
+
+    async def _price_with_operator(
+        self, service: str, country: str
+    ) -> tuple[int, str]:
+        country = to_provider_country(country)
+        data = await self._get(
+            "/guest/prices", params={"country": country, "product": service}
+        )
+        return self._cheapest_offer(data, service, country)
+
+    async def price(self, service: str, country: str) -> int:
+        cost_kop, _operator = await self._price_with_operator(service, country)
+        return cost_kop
+
+    async def _buy_with_operator(
+        self, service: str, country: str, operator: str
+    ) -> dict:
+        data = await self._get(
+            f"/user/buy/activation/{country}/{operator}/{service}"
+        )
+        if not isinstance(data, dict):
+            raise ProviderError("UPSTREAM_ERROR", "Unexpected buy payload")
+        if data.get("error"):
+            raise ProviderError(
+                "UNAVAILABLE", f"5sim buy error: {str(data['error'])[:200]}"
+            )
+        return data
 
     async def buy(self, service: str, country: str) -> dict:
         country = to_provider_country(country)
-        data = await self._get(f"/user/buy/activation/{country}/any/{service}")
-        if not isinstance(data, dict):
-            raise ProviderError("UPSTREAM_ERROR", "Unexpected buy payload")
+        try:
+            _cost_kop, operator = await self._price_with_operator(service, country)
+        except ProviderError:
+            operator = "any"
+        operator = operator or "any"
+        try:
+            data = await self._buy_with_operator(service, country, operator)
+        except ProviderError as exc:
+            if operator == "any" or exc.code in {"UNAUTHORIZED", "RATE_LIMITED"}:
+                raise
+            data = await self._buy_with_operator(service, country, "any")
         provider_order_id = data.get("id")
         phone = data.get("phone")
         if provider_order_id is None or not phone:

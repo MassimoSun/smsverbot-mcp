@@ -97,6 +97,7 @@ class SalesService:
         phone = str(bought["phone"])
         cost_kop = int(bought.get("cost_kop") or quote["cost_kop"])
         price_kop = self._price_for(cost_kop)
+        quote_price_kop = int(quote["price_kop"])
 
         order_id = self.store.create_order(
             key_id=key_id,
@@ -124,6 +125,8 @@ class SalesService:
             "order_id": order_id,
             "phone": phone,
             "price_kop": price_kop,
+            "quote_price_kop": quote_price_kop,
+            "charged_price_kop": price_kop,
             "expires_at": expires_at.isoformat(timespec="seconds"),
         }
 

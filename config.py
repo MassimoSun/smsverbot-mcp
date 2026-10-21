@@ -66,6 +66,11 @@ class Settings:
     usd_kop_rate: int = 9200
     host: str = "127.0.0.1"
     port: int = 8765
+    wallet_url: str = "http://127.0.0.1:8767"
+    wallet_token: str = ""
+    auto_cancel_interval: int = 60
+    sandbox_daily_limit: int = 50
+    sandbox_code_delay: int = 4
     allowed_hosts: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_HOSTS)
     )
@@ -93,6 +98,12 @@ class Settings:
             max_waits_global=_env_int("MAX_WAITS_GLOBAL", 50),
             code_wait_seconds=_env_int("CODE_WAIT_SECONDS", 120),
             usd_kop_rate=_env_int("USD_KOP_RATE", 9200),
+            wallet_url=os.environ.get("WALLET_URL", "http://127.0.0.1:8767").strip()
+            or "http://127.0.0.1:8767",
+            wallet_token=os.environ.get("WALLET_TOKEN", "").strip(),
+            auto_cancel_interval=_env_int("AUTO_CANCEL_INTERVAL", 60),
+            sandbox_daily_limit=_env_int("SANDBOX_DAILY_LIMIT", 50),
+            sandbox_code_delay=_env_int("SANDBOX_CODE_DELAY", 4),
             allowed_hosts=_env_list("MCP_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS),
             allowed_origins=_env_list("MCP_ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS),
         )

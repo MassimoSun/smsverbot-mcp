@@ -6,9 +6,22 @@
 
 Works with Claude Code, Cursor, VS Code, Codex, Hermes and any MCP client. Keywords: MCP server, model context protocol, SMS verification, SMS activation, virtual numbers, AI agents, phone verification.
 
-- Endpoint: `https://mcp.188.137.227.14.sslip.io/mcp`
-- Get an API key and top up the balance in Telegram: [@Smsverbot](https://t.me/Smsverbot)
+- Endpoint: `https://kremledroid.duckdns.org/mcp`
 - Tools: `list_services`, `list_countries`, `get_price`, `buy_number`, `wait_for_code`, `cancel_order`, `get_balance`, `order_history`, `whoami`
+
+## Step 1 — get your key in the bot
+
+Open **[@Smsverbot](https://t.me/Smsverbot)** in Telegram, press **🤖 MCP для агентов** (or send `/api_key`). The bot gives you the API key and shows your balance. **The balance is shared with the bot**: top up once — the same money pays for both numbers bought in the chat and numbers bought by your agent. No separate account, no card, no crypto wallet needed for MCP.
+
+## Step 2 — try the free sandbox first
+
+Press **🧪 Тестовый режим** in the same menu. A sandbox key buys fake numbers (`+10000000000`) and returns the fixed code `123456` after ~4 seconds, costs nothing, and never touches real providers. Build and debug your integration for free, then switch to a real key when you are ready.
+
+## Step 3 — connect
+
+```bash
+claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
+```
 
 ---
 

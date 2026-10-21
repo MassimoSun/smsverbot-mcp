@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at TEXT,
     owner_tg INTEGER,
     revoked_at TEXT,
-    daily_limit_kop INTEGER
+    daily_limit_kop INTEGER,
+    sandbox INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS topup_refs (
     ref TEXT PRIMARY KEY,
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS orders (
     status TEXT,
     code TEXT,
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    expires_at TEXT
 );
 CREATE TABLE IF NOT EXISTS ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +90,17 @@ class Store:
             conn.execute("ALTER TABLE api_keys ADD COLUMN revoked_at TEXT")
         if "daily_limit_kop" not in cols:
             conn.execute("ALTER TABLE api_keys ADD COLUMN daily_limit_kop INTEGER")
+        if "sandbox" not in cols:
+            conn.execute("ALTER TABLE api_keys ADD COLUMN sandbox INTEGER DEFAULT 0")
+        order_cols = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+        if "expires_at" not in order_cols:
+            conn.execute("ALTER TABLE orders ADD COLUMN expires_at TEXT")
+        # Created after the migration: an old table has no expires_at yet, so a
+        # schema-level index would break the CREATE TABLE replay.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_orders_status_expires"
+            " ON orders(status, expires_at)"
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
@@ -108,16 +121,47 @@ class Store:
     def _begin(conn: sqlite3.Connection) -> None:
         conn.execute("BEGIN IMMEDIATE")
 
-    def create_key(self, label: str, owner_tg: int | None = None) -> tuple[str, str]:
+    def create_key(
+        self, label: str, owner_tg: int | None = None, sandbox: bool = False
+    ) -> tuple[str, str]:
         key_id = uuid.uuid4().hex
         plain_key = "svb_" + secrets.token_urlsafe(32)
         with self._db() as conn:
             conn.execute(
-                "INSERT INTO api_keys (id, label, key_hash, balance_kop, created_at, owner_tg)"
-                " VALUES (?, ?, ?, 0, ?, ?)",
-                (key_id, label, hash_key(plain_key), now_iso(), owner_tg),
+                "INSERT INTO api_keys (id, label, key_hash, balance_kop, created_at, owner_tg,"
+                " sandbox) VALUES (?, ?, ?, 0, ?, ?, ?)",
+                (
+                    key_id,
+                    label,
+                    hash_key(plain_key),
+                    now_iso(),
+                    owner_tg,
+                    1 if sandbox else 0,
+                ),
             )
         return key_id, plain_key
+
+    def get_key(self, key_id: str) -> dict[str, Any] | None:
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT * FROM api_keys WHERE id = ?", (str(key_id),)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def set_sandbox(self, key_id: str, sandbox: bool) -> bool:
+        with self._db() as conn:
+            cur = conn.execute(
+                "UPDATE api_keys SET sandbox = ? WHERE id = ?",
+                (1 if sandbox else 0, str(key_id)),
+            )
+        return cur.rowcount > 0
+
+    def is_sandbox(self, key_id: str) -> bool:
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT sandbox FROM api_keys WHERE id = ?", (str(key_id),)
+            ).fetchone()
+        return bool(row and int(row["sandbox"] or 0))
 
     def list_keys_by_owner(self, owner_tg: int) -> list[dict[str, Any]]:
         with self._db() as conn:
@@ -392,13 +436,14 @@ class Store:
         price_kop: int,
         cost_kop: int,
         status: str = "waiting",
+        expires_at: str | None = None,
     ) -> int:
         ts = now_iso()
         with self._db() as conn:
             cur = conn.execute(
                 "INSERT INTO orders (key_id, provider, provider_order_id, service, country,"
-                " phone, price_kop, cost_kop, status, code, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                " phone, price_kop, cost_kop, status, code, created_at, updated_at, expires_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
                 (
                     key_id,
                     provider,
@@ -411,9 +456,106 @@ class Store:
                     status,
                     ts,
                     ts,
+                    expires_at,
                 ),
             )
             return int(cur.lastrowid)
+
+    def list_expired_orders(self, now_iso_str: str, limit: int = 200) -> list[dict[str, Any]]:
+        """Orders still waiting whose expires_at is in the past."""
+        with self._db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM orders WHERE status = 'waiting' AND expires_at IS NOT NULL"
+                " AND expires_at <= ? ORDER BY id ASC LIMIT ?",
+                (str(now_iso_str), max(1, int(limit))),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def note_wallet_move(
+        self,
+        key_id: str,
+        order_id: int | None,
+        amount_kop: int,
+        kind: str,
+        balance_kop: int | None = None,
+    ) -> None:
+        """Audit-only ledger row for a move performed by the bot wallet.
+
+        The bot database is the source of truth for money; api_keys.balance_kop
+        is just a cache refreshed from the wallet answer.
+        """
+        with self._db() as conn:
+            conn.execute(
+                "INSERT INTO ledger (key_id, order_id, amount_kop, kind, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (key_id, order_id, int(amount_kop), str(kind), now_iso()),
+            )
+            if balance_kop is not None:
+                conn.execute(
+                    "UPDATE api_keys SET balance_kop = ? WHERE id = ?",
+                    (int(balance_kop), key_id),
+                )
+
+    def set_balance_cache(self, key_id: str, balance_kop: int) -> bool:
+        """Refresh the cached balance from the wallet (no ledger row)."""
+        with self._db() as conn:
+            cur = conn.execute(
+                "UPDATE api_keys SET balance_kop = ? WHERE id = ?",
+                (int(balance_kop), str(key_id)),
+            )
+        return cur.rowcount > 0
+
+    def delete_order(self, order_id: int) -> bool:
+        """Drop an order that was never paid for (no wallet debit happened)."""
+        with self._db() as conn:
+            cur = conn.execute("DELETE FROM orders WHERE id = ?", (int(order_id),))
+        return cur.rowcount > 0
+
+    def close_order(
+        self,
+        order_id: int,
+        status: str = "cancelled",
+        refund_kop: int = 0,
+        balance_kop: int | None = None,
+    ) -> bool:
+        """Move an open/waiting order to a final status exactly once.
+
+        Returns True only for the call that performed the transition, which is
+        what keeps a second refund (or a second auto-cancel tick) out.
+        """
+        conn = self._connect()
+        try:
+            self._begin(conn)
+            order = conn.execute(
+                "SELECT * FROM orders WHERE id = ?", (int(order_id),)
+            ).fetchone()
+            if not order or order["status"] not in ("open", "waiting"):
+                conn.rollback()
+                return False
+            conn.execute(
+                "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+                (str(status), now_iso(), int(order_id)),
+            )
+            refund = int(refund_kop)
+            if refund:
+                conn.execute(
+                    "INSERT INTO ledger (key_id, order_id, amount_kop, kind, created_at)"
+                    " VALUES (?, ?, ?, 'refund', ?)",
+                    (order["key_id"], int(order_id), refund, now_iso()),
+                )
+            if balance_kop is not None:
+                conn.execute(
+                    "UPDATE api_keys SET balance_kop = ? WHERE id = ?",
+                    (int(balance_kop), order["key_id"]),
+                )
+            conn.commit()
+            return True
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def update_order_status(self, order_id: int, status: str) -> bool:
         with self._db() as conn:
@@ -463,6 +605,17 @@ class Store:
                 (key_id, limit),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def sandbox_ops_today(self, key_id: str) -> int:
+        """Sandbox operations today, cancelled ones included (loop protection)."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        with self._db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM orders WHERE key_id = ?"
+                " AND provider = 'sandbox' AND substr(created_at, 1, 10) = ?",
+                (key_id, today),
+            ).fetchone()
+        return int(row["n"]) if row else 0
 
     def daily_code_count(self, key_id: str) -> int:
         today = datetime.now(timezone.utc).date().isoformat()

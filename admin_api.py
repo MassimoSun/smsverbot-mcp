@@ -18,6 +18,14 @@ from urllib.parse import parse_qs, urlparse
 
 from store import Store
 
+try:  # у store есть now_iso; если сосед перепишет модуль - свой запас
+    from store import now_iso as _now_iso
+except ImportError:  # pragma: no cover
+    from datetime import datetime, timezone
+
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 LOG = logging.getLogger("smsverbot.admin_api")
 
 
@@ -36,6 +44,100 @@ DB_PATH = os.environ.get("MCP_DB", "./mcp.db")
 
 def _rub(kop: int) -> float:
     return round(int(kop) / 100.0, 2)
+
+
+# --- песочница: колонка api_keys.sandbox -------------------------------
+def _ensure_sandbox_column(store: Store) -> bool:
+    """Гарантировать колонку sandbox (идемпотентно, терпимо к миграциям store)."""
+    try:
+        with store._db() as conn:
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)")}
+            if "sandbox" not in cols:
+                conn.execute("ALTER TABLE api_keys ADD COLUMN sandbox INTEGER DEFAULT 0")
+            return True
+    except Exception:  # noqa: BLE001 - API boundary
+        LOG.debug("sandbox column unavailable", exc_info=True)
+        return False
+
+
+def _sandbox_of(store: Store, row: dict) -> bool:
+    """Флаг песочницы для строки ключа (row должна содержать id)."""
+    if "sandbox" in row and row["sandbox"] is not None:
+        return bool(row["sandbox"])
+    key_id = str(row.get("id") or row.get("key_id") or "")
+    if not key_id:
+        return False
+    getter = getattr(store, "is_sandbox", None)
+    if callable(getter):
+        try:
+            return bool(getter(key_id))
+        except Exception:  # noqa: BLE001
+            LOG.debug("store.is_sandbox failed", exc_info=True)
+    try:
+        with store._db() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(api_keys)")}
+            if "sandbox" not in cols:
+                return False
+            found = conn.execute(
+                "SELECT sandbox FROM api_keys WHERE id = ?", (key_id,)
+            ).fetchone()
+        return bool(found["sandbox"]) if found else False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _set_sandbox(store: Store, key_id: str, enabled: bool) -> bool:
+    """Включить/выключить песочницу. False — ключа нет или колонки нет."""
+    setter = getattr(store, "set_sandbox", None)
+    if callable(setter):
+        try:
+            result = setter(key_id, bool(enabled))
+            if result is None or result:
+                return True
+        except Exception:  # noqa: BLE001
+            LOG.debug("store.set_sandbox failed", exc_info=True)
+    if not _ensure_sandbox_column(store):
+        return False
+    with store._db() as conn:
+        cur = conn.execute(
+            "UPDATE api_keys SET sandbox = ? WHERE id = ?",
+            (1 if enabled else 0, str(key_id)),
+        )
+    return cur.rowcount > 0
+
+
+def _create_key(
+    store: Store, label: str, owner: int | None, sandbox: bool
+) -> tuple[str, str]:
+    """Создать ключ, при необходимости сразу помеченный как песочница."""
+    if sandbox:
+        try:
+            key_id, api_key = store.create_key(label, owner, sandbox=True)
+        except TypeError:
+            key_id, api_key = store.create_key(label, owner)
+        _set_sandbox(store, key_id, True)
+        return key_id, api_key
+    return store.create_key(label, owner)
+
+
+def _revoke_by_owner(store: Store, owner_tg: int) -> int:
+    """Погасить все активные ключи владельца. Возвращает число погашенных."""
+    helper = getattr(store, "revoke_keys_by_owner", None)
+    if callable(helper):
+        try:
+            for args in ((int(owner_tg),), (int(owner_tg), "ban")):
+                try:
+                    return int(helper(*args) or 0)
+                except TypeError:
+                    continue
+        except Exception:  # noqa: BLE001
+            LOG.debug("store.revoke_keys_by_owner failed", exc_info=True)
+    with store._db() as conn:
+        cur = conn.execute(
+            "UPDATE api_keys SET revoked_at = ? WHERE owner_tg = ? AND revoked_at IS NULL",
+            (_now_iso(), int(owner_tg)),
+        )
+    return int(cur.rowcount or 0)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -109,6 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                         "created_at": row["created_at"],
                         "masked_key": str(row["key_hash"])[:8],
                         "revoked": bool(row.get("revoked_at")),
+                        "sandbox": _sandbox_of(self.store, row),
                         "daily_limit_rub": _rub(row["daily_limit_kop"])
                         if row.get("daily_limit_kop") is not None
                         else None,
@@ -121,17 +224,20 @@ class Handler(BaseHTTPRequestHandler):
                 key_id = path[len("/keys/") :]
                 with self.store._db() as conn:
                     row = conn.execute(
-                        "SELECT id, label, balance_kop FROM api_keys WHERE id = ?", (key_id,)
+                        "SELECT * FROM api_keys WHERE id = ?", (key_id,)
                     ).fetchone()
                 if not row:
                     return self._fail(404, "NOT_FOUND", "Unknown key_id")
+                data = dict(row)
                 return self._json(
                     200,
                     {
                         "ok": True,
-                        "key_id": row["id"],
-                        "label": row["label"],
-                        "balance_rub": _rub(row["balance_kop"]),
+                        "key_id": data["id"],
+                        "label": data["label"],
+                        "balance_rub": _rub(data["balance_kop"]),
+                        "sandbox": _sandbox_of(self.store, data),
+                        "revoked": bool(data.get("revoked_at")),
                     },
                 )
             return self._fail(404, "NOT_FOUND", "Unknown route")
@@ -156,11 +262,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 label = str(data.get("label") or "").strip()
                 owner = data.get("owner_tg")
+                sandbox = data.get("sandbox", False)
                 if not label or len(label) > 64:
                     return self._fail(400, "VALIDATION", "label is required (<=64 chars)")
                 if owner is not None and not isinstance(owner, int):
                     return self._fail(400, "VALIDATION", "owner_tg must be an integer")
-                key_id, api_key = self.store.create_key(label, owner)
+                if not isinstance(sandbox, bool):
+                    return self._fail(400, "VALIDATION", "sandbox must be a boolean")
+                key_id, api_key = _create_key(self.store, label, owner, sandbox)
                 return self._json(
                     201,
                     {
@@ -169,7 +278,22 @@ class Handler(BaseHTTPRequestHandler):
                         "api_key": api_key,
                         "label": label,
                         "balance_rub": _rub(self.store.get_balance(key_id)),
+                        "sandbox": bool(sandbox),
                     },
+                )
+            if path == "/keys/revoke_by_owner":
+                data = self._body()
+                if data is None:
+                    return
+                owner = data.get("owner_tg")
+                reason = str(data.get("reason") or "ban").strip()[:64]
+                if not isinstance(owner, int) or isinstance(owner, bool):
+                    return self._fail(400, "VALIDATION", "owner_tg must be an integer")
+                revoked = _revoke_by_owner(self.store, owner)
+                LOG.info("revoked %d key(s) of owner %s (reason=%s)", revoked, owner, reason)
+                return self._json(
+                    200,
+                    {"ok": True, "owner_tg": owner, "revoked": revoked, "reason": reason},
                 )
             if path == "/topup":
                 data = self._body()
@@ -222,6 +346,29 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.store.revoke_key(key_id):
                     return self._fail(404, "NOT_FOUND", "Unknown key or already revoked")
                 return self._json(200, {"ok": True, "key_id": key_id, "revoked": True})
+            if path.startswith("/keys/") and path.endswith("/sandbox"):
+                key_id = path[len("/keys/") : -len("/sandbox")]
+                if not key_id:
+                    return self._fail(400, "VALIDATION", "key_id is required")
+                data = self._body()
+                if data is None:
+                    return
+                if "enabled" not in data:
+                    return self._fail(400, "VALIDATION", "enabled is required")
+                enabled = data["enabled"]
+                if not isinstance(enabled, bool):
+                    return self._fail(400, "VALIDATION", "enabled must be a boolean")
+                with self.store._db() as conn:
+                    exists = conn.execute(
+                        "SELECT 1 FROM api_keys WHERE id = ?", (key_id,)
+                    ).fetchone()
+                if not exists:
+                    return self._fail(404, "NOT_FOUND", "Unknown key_id")
+                if not _set_sandbox(self.store, key_id, enabled):
+                    return self._fail(500, "INTERNAL", "Could not update sandbox flag")
+                return self._json(
+                    200, {"ok": True, "key_id": key_id, "sandbox": bool(enabled)}
+                )
             if path.startswith("/keys/") and path.endswith("/limit"):
                 key_id = path[len("/keys/") : -len("/limit")]
                 data = self._body()
@@ -259,6 +406,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def build_server(host: str, port: int, store: Store) -> ThreadingHTTPServer:
+    _ensure_sandbox_column(store)
     handler = type("BoundHandler", (Handler,), {"store": store})
     return ThreadingHTTPServer((host, port), handler)
 

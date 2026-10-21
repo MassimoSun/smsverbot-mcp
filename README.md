@@ -6,7 +6,7 @@
 
 Works with Claude Code, Cursor, VS Code, Codex, Hermes and any MCP client. Keywords: MCP server, model context protocol, SMS verification, SMS activation, virtual numbers, AI agents, phone verification.
 
-- Endpoint: `https://kremledroid.duckdns.org/mcp`
+- Endpoint: `https://mcp.188.137.227.14.sslip.io/mcp`
 - Get an API key and top up the balance in Telegram: [@Smsverbot](https://t.me/Smsverbot)
 - Tools: `list_services`, `list_countries`, `get_price`, `buy_number`, `wait_for_code`, `cancel_order`, `get_balance`, `order_history`, `whoami`
 
@@ -18,28 +18,28 @@ MCP-сервер, который продаёт AI-агентам номера �
 
 ## Подключение за 30 секунд (хостед, без установки)
 
-Эндпоинт: `https://kremledroid.duckdns.org/mcp` (streamable HTTP, TLS).
+Эндпоинт: `https://mcp.188.137.227.14.sslip.io/mcp` (streamable HTTP, TLS).
 
 Claude Code:
 ```bash
-claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
+claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
 ```
 
 Cursor (`~/.cursor/mcp.json`):
 ```json
-{ "mcpServers": { "smsverbot": { "url": "https://kremledroid.duckdns.org/mcp" } } }
+{ "mcpServers": { "smsverbot": { "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
 ```
 
 VS Code (`.vscode/mcp.json`):
 ```json
-{ "servers": { "smsverbot": { "type": "http", "url": "https://kremledroid.duckdns.org/mcp" } } }
+{ "servers": { "smsverbot": { "type": "http", "url": "https://mcp.188.137.227.14.sslip.io/mcp" } } }
 ```
 
 Дальше: получить API-ключ у Telegram-бота @Smsverbot, положить баланс и передать ключ одним из двух способов — заголовком `Authorization: Bearer <ключ>` в конфиге клиента (рекомендуется для хостед-режима) или первым аргументом `api_key` любого инструмента. Проверка, что ключ принят: инструмент `whoami` — отдаёт `key_id` и баланс.
 
 ## Возможности
 
-- 8 MCP-инструментов для каталога, цен, покупки, ожидания кода, отмены, баланса и истории.
+- 9 MCP-инструментов для каталога, цен, покупки, ожидания кода, отмены, баланса, истории и проверки ключа.
 - Провайдер-агностичный слой: детерминированный `mock` без сети и реальный адаптер `fivesim`.
 - SQLite с WAL и транзакциями `BEGIN IMMEDIATE` для всех операций с балансом.
 - Ключи API хранятся только как SHA-256; открытый ключ показывается один раз.
@@ -183,7 +183,7 @@ claude mcp add smsverbot -- python server.py --stdio
 Публичный HTTP-сервер:
 
 ```bash
-claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
+claude mcp add --transport http smsverbot https://mcp.188.137.227.14.sslip.io/mcp
 ```
 
 Для отдельной базы и live-провайдера передайте переменные окружения в оболочке перед запуском команды.
@@ -206,6 +206,7 @@ claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 | `cancel_order(order_id)` | Отменить заказ и вернуть деньги один раз |
 | `get_balance()` | Текущий баланс в копейках и рублях |
 | `order_history(limit=10)` | Последние заказы ключа |
+| `whoami` | Проверить ключ: `key_id` и баланс в рублях |
 
 Чтение каталога, цен, баланса и истории никогда не списывает деньги.
 
@@ -250,7 +251,7 @@ claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 .venv/Scripts/python -m compileall -q .
 ```
 
-Тест `tests/test_mcp_client.py` запускает сервер по stdio через официальный MCP-клиент, проверяет ровно 8 инструментов и читает баланс из общей тестовой базы.
+Тест `tests/test_mcp_client.py` запускает сервер по stdio через официальный MCP-клиент, проверяет ровно 9 инструментов и читает баланс из общей тестовой базы.
 
 ## Структура
 
@@ -258,6 +259,6 @@ claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 - `store.py` — SQLite, ключи, заказы, ledger, лимиты.
 - `providers/` — протокол, mock- и 5sim-адаптеры.
 - `service.py` — бизнес-логика цен, покупки, ожидания и отмены.
-- `server.py` — FastMCP, 8 инструментов и CLI.
+- `server.py` — FastMCP, 9 инструментов и CLI.
 - `admin.py`, `admin_service.py` — админ-CLI и операции с ключами в рублях.
 - `tests/` — сервисные тесты и интеграционный тест MCP-клиента.

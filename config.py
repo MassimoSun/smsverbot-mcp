@@ -44,10 +44,15 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 DEFAULT_ALLOWED_HOSTS = [
     "127.0.0.1:8765",
     "localhost:8765",
+    "kremledroid.duckdns.org",
+    "kremledroid.duckdns.org:443",
     "mcp.188.137.227.14.sslip.io",
     "mcp.188.137.227.14.sslip.io:443",
 ]
-DEFAULT_ALLOWED_ORIGINS = ["https://mcp.188.137.227.14.sslip.io"]
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://kremledroid.duckdns.org",
+    "https://mcp.188.137.227.14.sslip.io",
+]
 
 
 @dataclass

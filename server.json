@@ -11,7 +11,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://mcp.188.137.227.14.sslip.io/mcp"
+      "url": "https://kremledroid.duckdns.org/mcp"
     }
   ]
 }

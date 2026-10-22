@@ -1,8 +1,8 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.MassimoSun/smsverbot-mcp",
-  "description": "SMS verification for AI agents: buy a number, get the code, cancel with refund.",
-  "version": "0.1.2",
+  "description": "SMS verification for AI agents: buy a number, get the code, cancel with refund. Free sandbox.",
+  "version": "0.1.3",
   "websiteUrl": "https://github.com/MassimoSun/smsverbot-mcp",
   "repository": {
     "url": "https://github.com/MassimoSun/smsverbot-mcp",

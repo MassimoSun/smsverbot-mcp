@@ -23,6 +23,12 @@ Press **🧪 Тестовый режим** in the same menu. A sandbox key buys 
 claude mcp add --transport http smsverbot https://kremledroid.duckdns.org/mcp
 ```
 
+
+## Badges
+
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-published-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.MassimoSun/smsverbot-mcp)
+[![Glama](https://glama.ai/mcp/connectors/io.github.MassimoSun/smsverbot-mcp/badges/score.svg)](https://glama.ai/mcp/connectors/io.github.MassimoSun/smsverbot-mcp)
+
 ---
 
 MCP-сервер, который продаёт AI-агентам номера для приёма SMS-кодов подтверждения. Это отдельный продукт, не связанный с Telegram-ботом. Работает без собственного UI и веб-фреймворка: агент подключается по stdio или streamable HTTP и вызывает инструменты MCP.

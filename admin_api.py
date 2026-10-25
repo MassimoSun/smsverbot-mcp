@@ -353,9 +353,15 @@ class Handler(BaseHTTPRequestHandler):
                 data = self._body()
                 if data is None:
                     return
-                if "enabled" not in data:
+                # Принимаем оба имени: бот шлёт "sandbox", ранние клиенты — "enabled".
+                # Раньше API требовал только "enabled", и кнопка «Тестовый режим»
+                # падала с VALIDATION на каждом нажатии (баг 22.10.2026).
+                if "enabled" in data:
+                    enabled = data["enabled"]
+                elif "sandbox" in data:
+                    enabled = data["sandbox"]
+                else:
                     return self._fail(400, "VALIDATION", "enabled is required")
-                enabled = data["enabled"]
                 if not isinstance(enabled, bool):
                     return self._fail(400, "VALIDATION", "enabled must be a boolean")
                 with self.store._db() as conn:
